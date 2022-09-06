@@ -52,6 +52,7 @@ Java线程通信示例：
 以Intel x86处理器为例。  
 compareAndSwapInt()方法是一个native方法，在上述处理器的汇编代码中，有一条lock前缀。添加该前缀的指令会被禁止和前面与后面的指令重排序，并且把写缓冲区中的**所有**数据刷新到内存中。  
 CAS的源码见P104  
+[![QQ-20220906151458.jpg](https://i.postimg.cc/0QM7gcv5/QQ-20220906151458.jpg)](https://postimg.cc/G8R4GP96)  
 ### 3.延迟初始化  
 见P135  
 
@@ -89,4 +90,8 @@ Lock接口的实现基本是通过聚合了一个同步器的子类来完成线�
 [![QQ-20220906141827.jpg](https://i.postimg.cc/VNgXmqqb/QQ-20220906141827.jpg)](https://postimg.cc/Y44vxmyp)  
 [![QQ-20220906150914.png](https://i.postimg.cc/8PTt2g7Z/QQ-20220906150914.png)](https://postimg.cc/5jkBzGqz)  
 实现自定义同步组件时，将会调用同步器提供的模板方法。  
-[![QQ-20220906150914.png](https://i.postimg.cc/8PTt2g7Z/QQ-20220906150914.png)](https://postimg.cc/5jkBzGqz)  
+[![QQ-20220906151458.jpg](https://i.postimg.cc/0QM7gcv5/QQ-20220906151458.jpg)](https://postimg.cc/G8R4GP96)  
+eg.独占锁  
+见P226  
+同步状态置1为加锁，置0为解锁。  
+#### 5.2 同步器的实现  
