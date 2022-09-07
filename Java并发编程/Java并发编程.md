@@ -1,4 +1,3 @@
-@[TOC]
 # Java并发编程
 
 [一、并发编程的底层实现原理](#一、并发编程的底层实现原理)
@@ -78,7 +77,9 @@ CAS的源码见P104
 该模式范式见P206，示例代码见P207.  
 ### 4.线程池  
 见P211  
-### 5.Lock接口  
+
+## 四、Java中的锁  
+### 1.Lock接口  
 见P222  
 用Lock接口获取锁时，不能写在try里。因为如果在获取锁的时候发生了异常，会引起锁的无故释放。  
 在finally块中释放锁，保证获取锁后，锁最终能被释放。  
@@ -87,7 +88,7 @@ Lock接口提供的synchronized关键字不具备的主要特性：
 Lock的API：  
 [![QQ-20220905194439.png](https://i.postimg.cc/8kKccG0b/QQ-20220905194439.png)](https://postimg.cc/hhmcZkgJ)  
 Lock接口的实现基本是通过聚合了一个同步器的子类来完成线程访问控制的。  
-#### 5.1 同步器  
+#### 1.1 同步器  
 见P224
 队列同步器AbstractQueuedSynchronizer使用了一个int成员变量表示同步状态，通过内置的FIFO队列完成资源获取线程的排队工作。  
 [![QQ-20220906141827.jpg](https://i.postimg.cc/VNgXmqqb/QQ-20220906141827.jpg)](https://postimg.cc/Y44vxmyp)  
@@ -97,7 +98,7 @@ Lock接口的实现基本是通过聚合了一个同步器的子类来完成线�
 eg.独占锁  
 见P226  
 同步状态置1为加锁，置0为解锁。  
-#### 5.2 同步器的实现  
+#### 1.2 同步器的实现  
 见P229  
 同步器依赖同步队列进行同步状态的管理。当线程获取同步状态失败时，会被包装成一个结点加入同步队列并阻塞，同步状态释放时会唤醒当前线程。 
 同步队列的基本结构如下：  
@@ -105,7 +106,7 @@ eg.独占锁
 同步器有一个指向头结点和一个指向尾结点的引用。  
 同步器使用CAS更新尾结点。  
 首节点释放同步状态时会唤醒它的后继，后继节点获取同步状态后会将自己设为首节点。这一步不需要CAS，因为只有一个线程能获取同步状态。  
-#### 5.3 独占式同步状态的获取与释放  
+#### 1.3 独占式同步状态的获取与释放  
 通过acquire()方法获取独占式同步状态。  
 tryAcquire保证线程安全的获取同步状态，如果获取失败，则构造同步节点并通过addWriter方法加入到同步队列（Node.EXCLUSIVE代表独占式），最后调用acquiredQueued方法，使得该节点以“死循环”的方式获取同步状态。如果获取不到则阻塞节点中的线程，而被阻塞现成的唤醒靠本线程的中断或前驱的出队实现。    
 ```java
@@ -176,13 +177,13 @@ private Node enq(final Node node) {
 使结点的释放规则符合FIFO，也便于对过早通知（前驱结点不是头结点的线程由于中断而被唤醒）的处理。  
 流程图如下：  
 [![QQ-20220906163001.png](https://i.postimg.cc/VLJJ09v3/QQ-20220906163001.png)](https://postimg.cc/Vdcf3CjR)  
-#### 5.4 共享式同步状态的获取与释放 
+#### 1.4 共享式同步状态的获取与释放 
 共享式获取在同一时刻可以有多个线程同时获取同步状态，适合读操作使用。  
 共享式获取的自旋过程中，成功获取同步状态并退出自旋的条件是tryAcquireShared(int arg)方法返回值大于等于0.  
 自旋过程中，如果当前节点的前驱为头结点，尝试获取同步状态，返回值大于等于0表示该次获取同步状态成功并退出自旋。 
-#### 5.5 获取同步状态对中断的响应  
+#### 1.5 获取同步状态对中断的响应  
 acquireInterruptibly(int arg)方法在等待获取同步状态时，如果当前线程被中断，会立即返回并抛出InterruptedException.  
-#### 5.6 独占式超时获取同步状态  
+#### 1.6 独占式超时获取同步状态  
 同步器的doAcquireNanos可以超时获取同步状态。若在指定的时间段内获取了同步状态则返回true，否则返回false。  
 ```java
 private boolean doAcquireNanos(int arg, long nanosTimeout) throws InterruptedException {
@@ -221,9 +222,9 @@ private boolean doAcquireNanos(int arg, long nanosTimeout) throws InterruptedExc
 ```  
 流程如下：  
 [![QQ-20220906163001.png](https://i.postimg.cc/T114nVk4/QQ-20220906163001.png)](https://postimg.cc/wRK2pmYX)  
-#### 5.7 自定义同步器示例  
+#### 1.7 自定义同步器示例  
 见P243  
-### 6.重入锁ReentrantLock  
+### 2.重入锁ReentrantLock  
 见P246  
 不支持可重入的锁，在线程获取锁后如果再尝试获取锁，就会被自己阻塞。synchronized支持重进入。  
 重进入需要解决两个问题：第一是要能识别尝试获取锁的线程是否是占据锁的线程。第二是重复获取锁是进行计数自增，释放锁时计数自减，直到计数为0表示锁已经被完全释放。  
@@ -249,7 +250,7 @@ final boolean nonfairTryAcquire(int acquires) {
 }
 ```  
 对于公平可重入锁，在c == 0时，只有当前结点没有前驱结点时才会进行CASCAS设置同步状态，成功才会获取锁。具体表现为非公平锁的tryAcquire方法中的`if (compareAndSetState(0, acquires))`改为`if (!hasQueuedPredecessors() && compareAndSetState(0, acquires))`  
-### 7.读写锁ReentrantReadWriteLock  
+### 3.读写锁ReentrantReadWriteLock  
 见P252  
 读写锁允许多个线程读访问，但写访问时会阻塞其他所有读写线程。  
 读写锁支持公平性选择、重进入和锁降级（写锁降级为读锁）。  
@@ -295,20 +296,86 @@ public class Cache {
 类比ReentrantLock的状态变量是锁被重复获取的次数，读写锁用一个变量的高位和低位分别表示读和写的状态。  
 如下图所示，高16位表示读，低16位表示写。  
 [![QQ-20220906163001.png](https://i.postimg.cc/pr5LYSc3/QQ-20220906163001.png)](https://postimg.cc/sGyz3TrJ)  
-#### 7.1 写锁的获取和释放  
+#### 3.1 写锁的获取和释放  
 写锁是一个可重入的排它锁。如果当前线程已经获取了写锁，则增加写状态；如果当前线程获取写锁时，读锁已被获取（读状态不为0）或者该线程不是已经获取写锁的线程，那么就等待。  
-#### 7.2 读锁的获取和释放  
+#### 3.2 读锁的获取和释放  
 如果其他线程获取了写锁，则等待；如果当前线程获取了写锁或写锁未被获取，则当前线程增加读状态。  
-#### 7.3 锁降级  
+#### 3.3 锁降级  
 锁降级是指继续持有当前所拥有的写锁，在获取读锁，最后释放写锁的过程。  
 读写锁不支持锁升级。因为如果其中一个占据读锁的线程升级为写锁，它对数据的改变是其他获取了读锁的线程不可见的。  
-### 8.LockSupport工具  
+### 4.LockSupport工具  
 LockSupport用于阻塞和唤醒线程。它定回忆了一组park开头的方法来阻塞线程，以及unpark方法来唤醒线程。  
 [![QQ-20220906163001.png](https://i.postimg.cc/PJWCM8Nm/QQ-20220906163001.png)](https://postimg.cc/ZvqYbn8R)  
 上表中的前三个方法是可以添加一个Object对象作为第一个参数（例如：parkNanos(Object blocker, long nanos)），blocker用来表示当前线程在等待的对象（下面称为阻塞对象），有阻塞对象的park类方法能够传递给开发人员更多的现场信息。  
-### 9.Condition接口  
+### 5.Condition接口  
 任意一个Java对象都拥有一组监视器方法，在java.lang.Object上，主要包括wait(), notify(), notifyAll()等方法。Condition接口也提供了类似的监视器方法，与Lock配合。  
 Condition接口与Object的监视器方法的区别见P263  
 Condition接口依赖Lock对象：`Condition condition = lock.newCondition();`  
+Condition的实现是同步器的内部类，因此每个Condition示例都能访问同步器提供的方法，相当于每个Condition都拥有所属同步器的引用。  
 Condition的部分方法介绍：  
 [![QQ-20220906163001.png](https://i.postimg.cc/GmgYSGhR/QQ-20220906163001.png)](https://postimg.cc/gxRnxwZt)  
+下面的例子是一个有界队列，应用了Condition接口：  
+```java
+public class BoundedQueue<T> {
+    private Object[] items;
+    // 添加的下标，删除的下标和数组当前的数据量
+    private int addIndex, removeIndex, count;
+    private Lock lock = new ReentrantLock();
+    private Condition notEmpty = lock.newCondition();
+    private Condition notFull = lock.newCondition();
+    public BoundedQueue(int size) {
+        items = new Object[size];
+    }
+    // 添加一个元素，如果数组满，则添加线程进入等待状态，直到有空位
+    public void add(T t) throws InterruptedException {
+        lock.lock();
+        try {
+            // 如果数组已满，就在notFull上等待，等待时释放锁
+            while (count == items.length)  
+                notFull.await();
+            // 添加元素
+            items[addIndex] = t;
+            if (++addIndex == items.length)
+                addIndex = 0;
+            ++count;
+            // 通知等待在notEmpty上的线程，表示已经有数据可以获取
+            notEmpty.signal();
+        } finally {
+            lock.unlock();
+        }
+    }
+    // 由头部删除一个元素，如果数组空，则删除线程进入等待状态，直到有新元素被添加
+    @SuppressWarnings("unchecked")  // 该注解抑制编译器产生的警告
+    public T remove() throws InterruptedException {
+        lock.lock();
+        try {
+            while (count == 0)
+                notEmpty.await();
+            Object x = items[removeIndex];
+            if (++removeIndex == items.length)
+                removeIndex = 0;
+            --count;
+            notFull.signal();
+            return (T) x;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```  
+使用while而不是if是为了防止过早或意外的通知，类似于等待-通知模式。 
+#### 5.1 Condition的实现  
+Condition
+##### 5.1.1.等待队列  
+等待队列是一个FIFO队列，存储调用了Condition.await()的线程。等待队列的节点定义和同步队列相同。  
+等待队列添加节点不需要CAS，因为调用await()的线程必定是获取了锁的线程。等待队列的添加通过锁来保证线程安全。  
+在Object的监视器模型上，一个对象有一个同步队列和一个等待队列。而Lock拥有一个同步队列和多个等待队列，它们的示意图如下：  
+[![QQ-20220906163001.png](https://i.postimg.cc/FzTdnWMh/QQ-20220906163001.png)](https://postimg.cc/sGZgMcfL)  
+#### 5.1.2 等待  
+**从await()返回时，当前线程一定获取了Condition相关的锁。**  
+调用await()方法时，相当于同步队列的首节点移动到Condition的等待队列中。  
+等待中的结点被中断会抛出InterruptedException.  
+#### 5.1.3 通知  
+调用signal()方法的前提是获取了锁。  
+执行signal()方法时，等待队列中的头结点被线程安全地移动到同步队列，然后被唤醒，从await()方法中的while循环中退出，然后调用同步器的acquireQueued()竞争获取同步状态，若成功获取锁，则从await()方法返回。  
+## 四、Java并发容器和框架  
