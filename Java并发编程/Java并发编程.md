@@ -1,3 +1,4 @@
+@[TOC]
 # Java并发编程
 
 [一、并发编程的底层实现原理](#一、并发编程的底层实现原理)
@@ -253,3 +254,44 @@ final boolean nonfairTryAcquire(int acquires) {
 读写锁允许多个线程读访问，但写访问时会阻塞其他所有读写线程。  
 读写锁支持公平性选择、重进入和锁降级（写锁降级为读锁）。  
 [![QQ-20220906163001.png](https://i.postimg.cc/jj930r92/QQ-20220906163001.png)](https://postimg.cc/XZfkdtn6)  
+下面是一个应用读写锁的示例：  
+```java
+public class Cache {
+    static Map<String, Object> map = new HashMap<String, Object>();
+    static ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+    static Lock r = rwl.readLock();
+    static Lock w = rwl.writeLock();
+    // 获取一个key对应的value
+    // 读取数据只需要加读锁
+    public static final Object get(String key) {
+        r.lock();
+        try {
+            return map.get(key);
+        } finally {
+            r.unlock();
+        }
+    }
+    // 下面两个涉及写入的需要加写锁
+    // 设置key对应的value，并返回旧的value
+    public static final Object put(String key, Object value) {
+        w.lock();
+        try {
+            return map.put(key, value);
+        } finally {
+            w.unlock();
+        }
+    }
+    // 清空所有的内容
+    public static final void clear() {
+        w.lock();
+        try {
+            map.clear();
+        } finally {
+            w.unlock();
+        }
+    }
+}
+```  
+类比ReentrantLock的状态变量是锁被重复获取的次数，读写锁用一个变量的高位和低位分别表示读和写的状态。  
+如下图所示，高16位表示读，低16位表示写。  
+[![QQ-20220906163001.png](https://i.postimg.cc/pr5LYSc3/QQ-20220906163001.png)](https://postimg.cc/sGyz3TrJ)  
