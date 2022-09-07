@@ -295,3 +295,20 @@ public class Cache {
 类比ReentrantLock的状态变量是锁被重复获取的次数，读写锁用一个变量的高位和低位分别表示读和写的状态。  
 如下图所示，高16位表示读，低16位表示写。  
 [![QQ-20220906163001.png](https://i.postimg.cc/pr5LYSc3/QQ-20220906163001.png)](https://postimg.cc/sGyz3TrJ)  
+#### 7.1 写锁的获取和释放  
+写锁是一个可重入的排它锁。如果当前线程已经获取了写锁，则增加写状态；如果当前线程获取写锁时，读锁已被获取（读状态不为0）或者该线程不是已经获取写锁的线程，那么就等待。  
+#### 7.2 读锁的获取和释放  
+如果其他线程获取了写锁，则等待；如果当前线程获取了写锁或写锁未被获取，则当前线程增加读状态。  
+#### 7.3 锁降级  
+锁降级是指继续持有当前所拥有的写锁，在获取读锁，最后释放写锁的过程。  
+读写锁不支持锁升级。因为如果其中一个占据读锁的线程升级为写锁，它对数据的改变是其他获取了读锁的线程不可见的。  
+### 8.LockSupport工具  
+LockSupport用于阻塞和唤醒线程。它定回忆了一组park开头的方法来阻塞线程，以及unpark方法来唤醒线程。  
+[![QQ-20220906163001.png](https://i.postimg.cc/PJWCM8Nm/QQ-20220906163001.png)](https://postimg.cc/ZvqYbn8R)  
+上表中的前三个方法是可以添加一个Object对象作为第一个参数（例如：parkNanos(Object blocker, long nanos)），blocker用来表示当前线程在等待的对象（下面称为阻塞对象），有阻塞对象的park类方法能够传递给开发人员更多的现场信息。  
+### 9.Condition接口  
+任意一个Java对象都拥有一组监视器方法，在java.lang.Object上，主要包括wait(), notify(), notifyAll()等方法。Condition接口也提供了类似的监视器方法，与Lock配合。  
+Condition接口与Object的监视器方法的区别见P263  
+Condition接口依赖Lock对象：`Condition condition = lock.newCondition();`  
+Condition的部分方法介绍：  
+[![QQ-20220906163001.png](https://i.postimg.cc/GmgYSGhR/QQ-20220906163001.png)](https://postimg.cc/gxRnxwZt)  
