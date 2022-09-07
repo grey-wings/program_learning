@@ -1,4 +1,3 @@
-@[TOC]
 # Java并发编程
 
 [一、并发编程的底层实现原理](#一、并发编程的底层实现原理)
@@ -101,9 +100,156 @@ eg.独占锁
 见P229  
 同步器依赖同步队列进行同步状态的管理。当线程获取同步状态失败时，会被包装成一个结点加入同步队列并阻塞，同步状态释放时会唤醒当前线程。 
 同步队列的基本结构如下：  
-[![QQ-20220906163001.png](https://i.postimg.cc/kXj0cP9t/QQ-20220906163001.png)](https://postimg.cc/7f2tHc5x)  
+[![QQ-20220906163001.png](https://i.postimg.cc/65Ry8RK5/QQ-20220906163001.png)](https://postimg.cc/crxsjv6V)   
 同步器有一个指向头结点和一个指向尾结点的引用。  
 同步器使用CAS更新尾结点。  
 首节点释放同步状态时会唤醒它的后继，后继节点获取同步状态后会将自己设为首节点。这一步不需要CAS，因为只有一个线程能获取同步状态。  
+#### 5.3 独占式同步状态的获取与释放  
+通过acquire()方法获取独占式同步状态。  
+tryAcquire保证线程安全的获取同步状态，如果获取失败，则构造同步节点并通过addWriter方法加入到同步队列（Node.EXCLUSIVE代表独占式），最后调用acquiredQueued方法，使得该节点以“死循环”的方式获取同步状态。如果获取不到则阻塞节点中的线程，而被阻塞现成的唤醒靠本线程的中断或前驱的出队实现。    
+```java
+public final void acquire(int arg) {
+if ( !tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg) )
+    selfInterrupt();
+}
 
-#### 5.3 
+final boolean acquireQueued(final Node node, int arg) {
+    boolean failed = true;
+    try {
+        boolean interrupted = false;
+        for (;;) {
+            // 自旋获取同步状态，如果获取到同步状态则退出，否则继续自旋并阻塞
+            final Node p = node.predecessor();
+            if (p == head && tryAcquire(arg)) {
+                // tryAcquired独占式获取同步状态
+                // 只有前驱结点才能尝试获取同步状态
+                setHead(node);
+                p.next = null;        // help GC
+                failed = false;
+                return interrupted;
+        }
+        if (shouldParkAfterFailedAcquire(p, node) && parkAndCheckInterru())
+            interrupted = true;
+        }
+        } finally {
+            if (failed)
+            cancelAcquire(node);
+    }
+}
+
+private Node addWaiter(Node mode) {
+    Node node = new Node(Thread.currentThread(), mode);
+    // 快速尝试在尾部添加
+    Node pred = tail;
+    if (pred != null) {
+        // CAS更新尾结点
+        node.prev = pred;
+        if (compareAndSetTail(pred, node)) {
+            pred.next = node;
+            return node;
+        }
+    }
+    enq(node);
+    return node;
+}  
+
+private Node enq(final Node node) {
+    for (;;) {
+        // 只有通过CAS将结点设置为尾结点之后，当前线程才能从该方法返回
+        Node t = tail;
+        if (t == null) { 
+            // 如果队列里没有结点，就造一个出来
+            if ( compareAndSetHead( new Node() ) )
+            tail = head;
+        } else {
+            node.prev = t;
+            if (compareAndSetTail(t, node)) {
+                t.next = node;
+                return t;
+            }
+        }
+    }
+}
+```
+为什么在acquireQueued()中，只有前驱结点才能尝试获取同步状态?  
+使结点的释放规则符合FIFO，也便于对过早通知（前驱结点不是头结点的线程由于中断而被唤醒）的处理。  
+流程图如下：  
+[![QQ-20220906163001.png](https://i.postimg.cc/VLJJ09v3/QQ-20220906163001.png)](https://postimg.cc/Vdcf3CjR)  
+#### 5.4 共享式同步状态的获取与释放 
+共享式获取在同一时刻可以有多个线程同时获取同步状态，适合读操作使用。  
+共享式获取的自旋过程中，成功获取同步状态并退出自旋的条件是tryAcquireShared(int arg)方法返回值大于等于0.  
+自旋过程中，如果当前节点的前驱为头结点，尝试获取同步状态，返回值大于等于0表示该次获取同步状态成功并退出自旋。 
+#### 5.5 获取同步状态对中断的响应  
+acquireInterruptibly(int arg)方法在等待获取同步状态时，如果当前线程被中断，会立即返回并抛出InterruptedException.  
+#### 5.6 独占式超时获取同步状态  
+同步器的doAcquireNanos可以超时获取同步状态。若在指定的时间段内获取了同步状态则返回true，否则返回false。  
+```java
+private boolean doAcquireNanos(int arg, long nanosTimeout) throws InterruptedException {
+    long lastTime = System.nanoTime();
+    final Node node = addWaiter(Node.EXCLUSIVE);
+    boolean failed = true;
+    try {
+        for (;;) {
+            // 下面这段和普通独占式相同
+            final Node p = node.predecessor();
+            if (p == head && tryAcquire(arg)) {
+                setHead(node);
+                p.next = null; // help GC
+                failed = false;
+                return true;
+            }
+            // 如果时间到还没有获取到同步状态，退出并返回false
+            if (nanosTimeout <= 0)
+                return false;
+            // spinForTimeoutThreshold为1000ns，如果剩余时间小于这个阈值，就会自旋而不是等待，
+            // 因为非常短时间的超时等待不精确
+            if (shouldParkAfterFailedAcquire(p, node) && nanosTimeout > spinForTimeoutThreshold)
+                LockSupport.parkNanos(this, nanosTimeout);  // 睡眠并释放资源
+            long now = System.nanoTime();
+            nanosTimeout -= now - lastTime;
+            lastTime = now;
+            // 能响应中断
+            if (Thread.interrupted())
+                throw new InterruptedException();
+        }
+    } finally {
+        if (failed)
+            cancelAcquire(node);
+    }
+}
+```  
+流程如下：  
+[![QQ-20220906163001.png](https://i.postimg.cc/T114nVk4/QQ-20220906163001.png)](https://postimg.cc/wRK2pmYX)  
+#### 5.7 自定义同步器示例  
+见P243  
+### 6.重入锁ReentrantLock  
+见P246  
+不支持可重入的锁，在线程获取锁后如果再尝试获取锁，就会被自己阻塞。synchronized支持重进入。  
+重进入需要解决两个问题：第一是要能识别尝试获取锁的线程是否是占据锁的线程。第二是重复获取锁是进行计数自增，释放锁时计数自减，直到计数为0表示锁已经被完全释放。  
+非公平可重入锁的tryAcquire方法如下：  
+```java
+final boolean nonfairTryAcquire(int acquires) {
+    final Thread current = Thread.currentThread();
+    int c = getState();
+    if (c == 0) {
+        if (compareAndSetState(0, acquires)) {
+            setExclusiveOwnerThread(current);
+            return true;
+        }
+    } else if (current == getExclusiveOwnerThread()) {
+        // 如果是占有锁的线程再次获取锁，则自增计数
+        int nextc = c + acquires;
+        if (nextc < 0)
+            throw new Error("Maximum lock count exceeded");
+        setState(nextc);
+        return true;
+    }
+    return false;
+}
+```  
+对于公平可重入锁，在c == 0时，只有当前结点没有前驱结点时才会进行CASCAS设置同步状态，成功才会获取锁。具体表现为非公平锁的tryAcquire方法中的`if (compareAndSetState(0, acquires))`改为`if (!hasQueuedPredecessors() && compareAndSetState(0, acquires))`  
+### 7.读写锁ReentrantReadWriteLock  
+见P252  
+读写锁允许多个线程读访问，但写访问时会阻塞其他所有读写线程。  
+读写锁支持公平性选择、重进入和锁降级（写锁降级为读锁）。  
+[![QQ-20220906163001.png](https://i.postimg.cc/jj930r92/QQ-20220906163001.png)](https://postimg.cc/XZfkdtn6)  
