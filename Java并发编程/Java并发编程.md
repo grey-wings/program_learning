@@ -8,6 +8,7 @@
 见P21  
 如果一个字段被声明成volatile，则所有线程看到这个变量的值是一致的。  
 对volatile变量写入时，这个变量所在的缓存行的数据写回到系统内存，同时会导致其他处理器的缓存无效。  
+volatile类型的变量能被多线程同时读，但只能被单线程同时写（除非写入的值不依赖于原值）。  
 #### 1.2 volatile的内存语义  
 **可见性**：对一个volatile变量的读，总是能看到**任意线程**对这个变量的最后写入。  
 **原子性**：对任意单个volatile变量的写具有原子性，但不保证++操作有原子性。  
@@ -379,3 +380,25 @@ Condition
 调用signal()方法的前提是获取了锁。  
 执行signal()方法时，等待队列中的头结点被线程安全地移动到同步队列，然后被唤醒，从await()方法中的while循环中退出，然后调用同步器的acquireQueued()竞争获取同步状态，若成功获取锁，则从await()方法返回。  
 ## 四、Java并发容器和框架  
+### 1.ConcurrentHashMap  
+ConcurrentHashMap利用了锁分段技术。一个锁只锁容器中的一部分数据，可以提高并发访问效率。而同样线程安全的HashTable只有一把锁，效率低下。  
+ConcurrentHashMap由Segment和HashEntry两种数组组成。Segment是一种可重入锁，HashEntry用于存储k-v对。一个ConcurrentHashMap包含一个Segment数组，每个Segment守护着一个HashEntry数组里的元素，每个HashEntry是一个链表结构的元素。  
+#### 1.1 初始化  
+见P279  
+#### 1.2 get操作  
+get操作不需要加锁，如果读到空值才会加锁重读。这是因为get方法里要用到的共享变量全部是volatile类型，如用于统计当前Segment大小的count字段和HashEntry的value。  
+#### 1.3 put操作  
+put操作需要对共享变量进行写操作，因此需要加锁。  
+put方法首先定位到Segment，然后判断是否需要对Segment里的HashEntry数组进行扩容，然后定位添加元素的位置，将其放在HashEntry数组里。  
+如果HashEntry超过了容量，那么进行扩容。扩容时会创建一个容量是原来两倍的数组，然后将原数组里的元素rehash进型的数组里。ConcurrentHashMap只会对某个segment进行扩容。  
+#### 1.4 size操作  
+统计整个ConcurrentHashMap里元素的数量。  
+相加时可以获取每个Segment的count的最行之，但可能累加前count发生了变化。因此先尝试2次不锁Segment的方式统计各个Segment的大小，如果统计的过程中，容器的count发生了变化，再采用加锁的方式统计所有Segment的大小。容器是否发生变化由一个变量modCount判断，put, remove, clean方法都会使modCount变量加1，则在统计size前后如果modCount没有变化，则得知容器大小没有变化。  
+### 2.ConcurrentLinkedQueue：非阻塞的线程安全队列  
+ConcurrentLinkedQueue由head和tail结点组成，每个结点由节点元素item和指向下一个节点的引用next组成。**默认情况下存储的元素为空，tail == head。  
+#### 2.1 入队  
+入队做两件事情：第一是吧入队节点设成当前队列尾结点的下一个结点；二是如果tail的next不为空就将入队节点设为tail，否则将入队节点设为tail的next结点。**所以tail结点不总是尾结点。**  
+入队的示意图如下：  
+[![QQ-20220908104238.png](https://i.postimg.cc/66zMD66W/QQ-20220908104238.png)](https://postimg.cc/mhz39sFJ)  
+入队需要采用CAS算法：  
+
