@@ -1,7 +1,5 @@
 # Java并发编程
 
-[一、并发编程的底层实现原理](#一、并发编程的底层实现原理)
-[定义和实现原理](#21-定义和实现原理)  
 ## 一、并发编程的底层实现原理  
 ### 1.volatile  
 #### 1.1 定义和实现原理  
@@ -379,7 +377,7 @@ Condition
 #### 5.1.3 通知  
 调用signal()方法的前提是获取了锁。  
 执行signal()方法时，等待队列中的头结点被线程安全地移动到同步队列，然后被唤醒，从await()方法中的while循环中退出，然后调用同步器的acquireQueued()竞争获取同步状态，若成功获取锁，则从await()方法返回。  
-## 四、Java并发容器和框架  
+## 五、Java并发容器和框架  
 ### 1.ConcurrentHashMap  
 ConcurrentHashMap利用了锁分段技术。一个锁只锁容器中的一部分数据，可以提高并发访问效率。而同样线程安全的HashTable只有一把锁，效率低下。  
 ConcurrentHashMap由Segment和HashEntry两种数组组成。Segment是一种可重入锁，HashEntry用于存储k-v对。一个ConcurrentHashMap包含一个Segment数组，每个Segment守护着一个HashEntry数组里的元素，每个HashEntry是一个链表结构的元素。  
@@ -400,5 +398,255 @@ ConcurrentLinkedQueue由head和tail结点组成，每个结点由节点元素ite
 入队做两件事情：第一是吧入队节点设成当前队列尾结点的下一个结点；二是如果tail的next不为空就将入队节点设为tail，否则将入队节点设为tail的next结点。**所以tail结点不总是尾结点。**  
 入队的示意图如下：  
 [![QQ-20220908104238.png](https://i.postimg.cc/66zMD66W/QQ-20220908104238.png)](https://postimg.cc/mhz39sFJ)  
-入队需要采用CAS算法：  
+入队需要采用CAS算法，首先定位尾结点，其次使用CAS算法将入队结点设置成尾结点的next结点，如不成功则重试。    
+为什么不让tail永远是队列的尾结点？  
+如果这样做，每次都需要用循环CAS更新tail结点，现有的做法减少了CAS操作的数量，提高了效率。tail和尾结点允许有1个结点的距离，实际上是用volatile变量的读操作来减少对volatile变量的写操作。  
+#### 2.2 出队  
+出队的一个例子示意如下：  
+[![QQ-20220908104238.png](https://i.postimg.cc/05FjMCtL/QQ-20220908104238.png)](https://postimg.cc/NL8BZRv4)  
+head结点有元素时，直接弹出head结点里的元素（赋值为null），而不会更新head结点；head结点为空时，出队操作才会更新head结点。这也是通过减少CAS更新head结点的消耗来提高效率。  
+### 3.阻塞队列  
+阻塞队列支持阻塞的插入和移除方法。  
+插入阻塞的插入方法：当队列满时队列会阻塞插入元素的线程，直到队列不满。  
+插入阻塞的移除方法：当队列空时获取元素的线程会等待队列变为非空。  
+在阻塞队列不可用时
+[![QQ-20220908212707.jpg](https://i.postimg.cc/2yGJwK7C/QQ-20220908212707.jpg)](https://postimg.cc/0K6c5Z44)  
+返回特殊值是指插入成功返回true，移除失败返回null。  
+Java中有7种阻塞队列，见P298.  
+#### 3.1 DelayQueue：一个支持延时获取元素的无界阻塞队列  
+该结构用优先队列实现，队列中的元素必须实现Delayed接口。只有延迟期满才能从队列中提取元素。  
+DelayQueue可以用于：
+·设计缓存系统，用于保存缓存元素的有效期。用一个线程轮询DelayQueue，如果能获取到元素，说明缓存有效期到了。  
+·定时任务调度：使用DelayQueue保存当天将要执行的任务和执行时间见，一旦从DelayQueue中获取到任务就开始执行、  
+##### 3.1.2 实现Delay接口  
+见P300  
+第一步，在对象创建的时候，使用time来记录当前对象延迟到什么时候才能使用，并使用sequenceNumbei来标识元素在队列中的先后顺序。  
+第二步，实现getDelay方法，该方法返回当前元素还需要延时多长时间，单位是纳秒。  
+第三步，实现compareTo方法来指定元素的顺序，比如延时时间最长的放在队列末尾。  
+#### 3.2 SynchronousQueue：不储存元素的阻塞队列  
+每一个put操作必须等待一个take操作，否则不能继续添加元素。  
+它可以看成一个传球手，适合传递性场景。SynchronousQueue的吞吐量高于LinkedBlockingQueue和ArrayBlockingQueue。  
+#### 3.3 LinkedTransferQueue：无界阻塞TransferQueue队列  
+相比其他队列，它多了tryTransfer和transfer方法。  
+##### 3.1 transfer方法  
+如果当前有消费在等待接收元素（消费者使用take()方法或者带时间限制的poll()方法时），transfer方法可以把生产者传入的元素立刻transfer给消费者。如果没有消费者在等待，transfer方法会将元素存放在队列的tail结点，并等到该元素被消费了才返回。  
+##### 3.2 tryTransfer方法  
+试探生产者传入的元素能否直接传给消费者。如果没有消费者等待接收元素，则返回false。和transfer的区别是tryTransfer方法无论消费者是否接受，方法立即返回，而transfer方法必须等到消费后才返回。  
+有时间限制的tryTransfer(E e, long timeout, TimeUnit unit)方法，超时还没消费元素则返回false，否则返回true。  
+#### 3.4 LinkedBlockingDeque：双向阻塞队列  
+双向队列多了一个操作队列的入口，多线程同时入队时，也就减少了一半的竞争。  
+#### 3.5 阻塞队列的实现原理  
+·使用通知模式。生产者往满的队列里添加元素时会阻塞生产者，当消费者消费了一个元素后，会通知生产者当前队列可用。在JDK源码中使用了Condition来实现。  
+### 4.Fork/Join框架  
+Fork/Join框架是一个用于并行执行任务的框架，是一个把大任务分割成若干小人物，然后汇总的框架。例如，计算1到10000的求和，可以分成10个子任务，分别求1到1000，1001到2000……的和，然后再将这些结果相加。  
+#### 4.1 工作窃取算法  
+是指某个线程从其他队列里窃取任务来执行。通常使用双端队列，被窃取的线程（工作做不完的线程）从头部取任务执行，窃取任务的线程（工作做完有空闲的线程）从队列尾部取任务来执行。  
+优点：充分利用线程进行并行计算，减少了线程间的竞争。  
+缺点：某些情况下还是存在竞争（比如只有双端队列中一个任务的时候），创建线程和多个队列也会消耗系统资源。  
+#### 4.2 Fork/Join的设计  
+首先分割任务。把大任务分割成子任务，如果子任务还是很大，需要继续分割。  
+其次执行任务并合并结果。分割的子任务放在双端队列里，由几个线程分别取任务执行；结果统一放在一个队列里，启动一个线程拿数据，然后合并他们。  
+Fork/Join需要两个类完成以上任务：
+·ForkJoinTask：提供在任务中执行fork()和join()操作的机制。一般需要继承RecursiveAction（用于有返回结果的任务）或RecursiveTask（用于无返回结果的任务）。  
+·ForkJoinPool：ForkJoinTask需要ForkJoinPool来执行。  
+#### 4.3 Fork/Join示例  
+见P314  
+#### 4.4 Fork/Join的异常捕获  
+ForkJoinTask执行时的异常不能在主线程中捕获。设task是一个ForkJoinTask类子类的实例，可以用task.isCompletedAbnormally()检查是否抛出异常或被取消，并可以通过task.getException方法来获取异常。  
 
+## 六、Java中的原子操作类  
+### 1.原子更新基本类型类  
+包括AtomicBoolean、AtomicInteger和AtomicLong。这3个类的方法基本一样。  
+以整型为例，常用方法如下：  
+·int addAndGet(int delta)：加法  
+·boolean compareAndSet(int expect, int update)：CAS  
+·int getAndIncrement()：自增1，并返回**自增前**的值。  
+·int getAndSet(int newValue)：以原子方式设置为新的值，并返回**旧的值**。  
+getAndIncrement会不断地用CAS尝试将原值更新为原值+1，直到成功。  
+### 2.原子更新数组  
+包括AtomicIntegerArray（整型）、AtomicLongArray（长整型）、AtomicReferenceArray（引用型）  
+整型原子数组主要有以下操作方法：  
+·int addAndGet(int i, int delta)：将数组中下标为i的元素加上delta。  
+·boolean compareAndSet(int i, int expect, int update)：对于给定下标中的元素，如果当前值等于预期值，则更新。
+原子数组构造：  
+```java  
+static AtomicIntegerArray ai = new AtomicIntegerArray(value);
+```  
+value数组不会随ai改变。  
+### 3.原子更新引用类型AtomicReference  
+还有AtomicReferenceFieldUpdater——原子更新引用类型里的字段、AtomicMarkableReference——原子更新带有标志位的引用类型。  
+### 4.原子更新字段类  
+用于原子更新某个类里的某个字段。  
+·AtomicIntegerFieldUpdater：原子更新整型字段的更新器。  
+·AtomicLongFieldUpdater：原子更新长整型字段的更新器。  
+·AtomicStampedReference：原子更新有版本号的引用类型。可以解决CAS的ABA问题。  
+原子更新字段类的使用方法如下：  
+```java
+public class AtomicIntegerFieldUpdaterTest {
+    // 创建原子更新类，并设置需要更新的对象类和对象的属性
+    private static AtomicIntegerFieldUpdater<User> a = AtomicIntegerFieldUpdater.
+    newUpdater(User.class􅇞 "old");
+    public static void main(String[] args) {
+        // 设置柯南的年龄是10岁
+        User conan = new User("conan"􅇞 10);
+        // 柯南长了一岁，但是仍然会输出旧的年龄
+        System.out.println(a.getAndIncrement(conan));
+        // 输出现在的年龄
+        System.out.println(a.get(conan));
+    }
+    public static class User {
+        private String name;
+        public volatile int old;
+        public User(String name􅇞 int old) {
+            this.name = name;
+            this.old = old;
+        }
+        public String getName() {
+            return name;
+        }
+        public int getOld() {
+            return old;
+        }
+    }
+}
+```  
+## 七、Java中的并发工具类  
+### 1.CountDownLatch  
+CountDownLatch允许一个或多个线程等待其他线程完成操作。  
+例如：要解析一个Excel里面每个sheet的数据，用多线程解析，主线程等到所有子线程完成解析。最简单的方法是join()。而CountDownLatch也可以实现join()的功能，并且功能更多。  
+CountDownLatch的构造函数接收一个int类型的参数作为计数器：  
+```java
+staticCountDownLatch c = new CountDownLatch(2);
+```  
+想等待N个点完成，就传入N作为参数。这里的N个点可以是N个线程，可以是1个线程里的N个执行步骤。用在多个线程时，只要把这个CountDownLatch的引用传入对应线程即可。  
+每当调用CountDownLatch的countDown方法时，N就会减1；CountDownLatch的await方法会阻塞当前线程，知道N变成0。await方法也可以指定超时。  
+### 2.同步屏障CyclicBarrier  
+让一组线程达到一个屏障（或者叫同步点）的时候被阻塞，直到最后一个线程到达屏障时，屏障才会开门，所有被屏障拦截的线程才会继续运行。  
+使用`new CyclicBarrier(int parties)`来初始化CyclicBarrier类，参数表示屏障拦截的线程数量。每个线程调用await()方法告诉CyclicBarrier已经到达屏障，然后当前线程被阻塞。  
+另有一个更高级的构造函数`CyclicBarrier(int parties, Runnable barrierAction)`。  
+CyclicBarrier可以用于多线程计算数据，最后合并计算结果的场景。  
+### 3.CountDownLatch和CyclicBarrier的区别  
+CountDownLatch的计数器只能使用一次，而CyclicBarrier的计数器可以用reset()方法重置，所以CyclicBarrier能处理更复杂的业务场景，例如，如果计算发生错误，可以重置计数器并让线程重新执行。  
+CyclicBarrier还有getNumberWaiting方法获得阻塞的线程数量，isBroken方法了解阻塞的线程是否中断等。  
+### 4.控制线程数的Semaphore
+Semaphore（信号课）用来控制同时访问特定资源的线程数量，可以把它比作控制流量的红绿灯。  
+主要应用在流量控制，尤其是公有资源有限的场景，比如数据库。  
+构造方法是`Semaphore(int peimits)`, 接受一个整型变量表示可用的许可证数量，即最大并发数。线程使用Semaphore的acquire()方法获得一个许可证，用release()归还许可证。还可以用tryAcquire()方法获取许可证。  
+Semaphore的其他方法见P345.  
+### 5.线程间交换数据的Exchanger  
+Exchanger用于线程间的数据交换，它提供一个同步点，在这个同步点，两个线程可以交换彼此的数据。两个线程通过exchanger方法交换数据，如果第一个线程先执行exchange()方法，它会一直等待第二个线程也执行exchange方法，当两个线程都到达同步点时，这两个线程就可以交换数据。    
+Exchanger可以用于遗传算法、校对工作等。例如由两个人进行录入数据，都录入完成后进行比对。  
+```java
+public class ExchangerTest {
+    private static final Exchanger<String>exgr = new Exchanger<String>();
+    private static ExecutorServicethreadPool = Executors.newFixedThreadPool(2);
+    public static void main(String[] args) {
+        threadPool.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String A = "银行流水A";  // A录入银行流水数据
+                    exgr.exchange(A);
+                } catch (InterruptedException e) {
+                }
+            }
+        });
+        threadPool.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                        String B = "银行流水B";  // B录入银行流水数据
+                        String A = exgr.exchange("B");
+                        System.out.println("A和B数据是否一致" + A.equals(B) + "，A录入的是："
+                        + A + "，B录入的是：" + B);
+                } catch (InterruptedException e) {
+                }
+            }
+        });
+        threadPool.shutdown();
+    }
+}
+```  
+exchange也可以设置超时等待。  
+## 八、Java中的线程池  
+线程池有以下三个好处：  
+·降低资源消耗。线程池重复使用已经创建的线程，减少了线程的创建和销毁。  
+·提高响应速度。当任务到达时，不需要等到线程创建完毕即可执行。  
+·提高现成的可管理性。  
+线程池的主要处理流程如下：  
+[![QQ-20220910144611.jpg](https://i.postimg.cc/KzhmP0QQ/QQ-20220910144611.jpg)](https://postimg.cc/GBz0rJWs)  
+ThreadPoolExecutor执行execute方法分下面四种情况：  
+（1）如果当前运行的线程数少于corePoolSize，则创建新线程来执行任务（需要获取全局锁）。  
+（2）如果运行的线程数大于等于corePoolSize，则将任务加入BlockingQueue。  
+（3）如果无法将任务加入BlockingQueue（队列已满），则创建新的线程来处理任务（需要获取全局锁）。  
+（4）如果新线程将使当前运行的线程超出maximumPoolSize，任务将被拒绝。  
+ThreadPoolExecutor设计时尽可能避免获取全局锁。  
+**工作线程**：线程池创建线程时，会将线程封装成工作线程Worker，Worker在执行完任务后还会循环获取工作队列里的任务来执行。  
+### 1.线程池的创建  
+```java
+public ThreadPoolExecutor(int corePoolSize,
+                          int maximumPoolSize,
+                          long keepAliveTime,
+                          TimeUnit unit,
+                          BlockingQueue<Runnable> workQueue,
+                          ThreadFactory threadFactory,
+                          RejectedExecutionHandler handler)
+```  
+参数解析如下：  
+·corePoolSize：核心线程池大小。当一个任务提交到线程池时，就会创造一个线程。即使池中还有其他线程空闲，也会创造线程直到数量达到corePoolSize。  
+·runnableTaskQueue：用于保存等待执行的任务的阻塞队列。可选的队列类型见P356。  
+·maximumPoolSize：线程池允许创建的最大线程数。如果任务队列采用无界队列，此参数无效。  
+·threadFactory：用来给线程起一个有意义的名字。  
+·RejectedExecutionHandler：饱和策略。当队列和线程池都满了，就要采取饱和策略来处理提交的新任务。几种饱和策略定义如下：    
+[![QQ-20220910144611.jpg](https://i.postimg.cc/c47ds0XL/QQ-20220910144611.jpg)](https://postimg.cc/0bNTngTT)  
+### 2.向线程池提交任务  
+有execute()和submit()两种方法。  
+execute()用于提交不需要返回值的任务，所以无法判断是否执行成功。参数是一个Runnable类的实例。  
+submit()用于提交需要返回值的任务。线程池会返回一个future类型的对象，这个对象可以判断任务是否执行成功，并且可以通过future的get()方法来获取返回值，该方法会阻塞当前线程直到任务完成。get加时间参数也可变为超时方法。    
+### 3.关闭线程池  
+有shutdown和shutdownNow两种方法。它们的原理是遍历池中所有线程，逐个将其中断，因此无法响应中断的线程可能无法终止。shutdownNow会将线程池的状态设为STOP，然后停止所有正在执行或暂停任务的线程；shutdown将线程池的状态设为SHUTDOWN，然后中断所有没有在执行任务的线程。  
+调用这两个方法，isShutdown就返回true；所有任务关闭后，isTerminated返回true。通常使用shutdown方法来关闭线程池，如果任务不一定要执行完，可以调用shutdownNow。  
+### 4.合理配置线程池  
+线程池的配置要根据任务特性来决定。一般考察以下特性：  
+·任务的性质：CPU密集型任务、IO密集型任务、混合型任务  
+·任务的优先级  
+·任务的执行时间  
+·任务的依赖性：是否依赖其他系统资源，如数据库链接  
+CPU密集型任务应配置尽可能小的线程，如CPU数量+1；IO密集型任务中，线程不是一直在执行任务，则应配置较多的线程，如CPU数量的两倍；如果可以将任务拆分为一个CPU密集型任务和一个IO密集型任务，且两者时间相差不大，则应拆分以获取更高的吞吐量；若时间差较大则不应拆分。可以通过Runtime.getRuntime().availableProcessors()方法获取CPU个数。  
+优先级不同的任务可以使用PriorityBlockingQueue来处理。  
+执行时间不同的任务可以建立多个线程池分别处理，也可使用优先队列，先执行短的任务。  
+需要数据库连接池的任务，因为需要等到数据库返回结果，则线程数应该设置多一点，否则CPU空闲时间较长。  
+建议使用有界队列，根据需求可以大一点，比如几千的容量。eg.数据库出错导致执行SQL十分缓慢，会阻塞大量工作线程。有界队列会在满之后抛出异常（或其他处理策略），但无界队列会不断继续添加任务，可能撑满内存。  
+### 5.线程池的监控  
+见P363  
+
+## 九、Executor框架  
+Java中的线程既是工作单元，也是执行机制。从JDK5开始，把工作单元和执行机制分离开来。工作单元包括Runnable和Callable，而执行机制由Executor框架提供。  
+Executor框架采用两级调度模型。应用程序通过Executor框架控制上层的调度，而下层的调度由OS内核控制，不受应用程序控制：  
+[![QQ-20220911102906.png](https://i.postimg.cc/XNGqdrkH/QQ-20220911102906.png)](https://postimg.cc/NLtQwfVm)  
+Executor框架主要由三大部分组成：  
+·任务。被执行任务需要实现Runnable或Callable接口。  
+·任务的执行。包括任务执行机制的核心接口Executor，以及继承自Executor的ExecutorService接口。Executor框架的两个关键类ThreadPoolExecutor和ScheduledThreadPoolExecutor实现了ExecutorService接口。  
+·异步计算的结果。包括接口Future和实现Future接口的FutureTask类。  
+关于这些类和接口的简介如下：  
+[![QQ-20220910144611.jpg](https://i.postimg.cc/28Ddz03m/QQ-20220910144611.jpg)](https://postimg.cc/grgLsqvB)  
+Executor的执行过程见P370  
+### 1.ThreadPoolExecutor  
+可以创建以下3种类型的ThreadPoolExecutor：  
+·FixedThreadPool。线程数固定，适用于为了满足资源管理的需求，而需要限制当前线程数量的应用场景，适用于负载较重的服务器。  
+·SingleThreadExecutor。适用于需要保证顺序地执行各个任务，并且在任意时间点不会有多个线程是活动的应用场景。   
+·CachedThreadPool。是一个大小无界的线程池，会根据需要创建新线程。适用于执行很多短期异步任务的小程序，或者是负载较轻的服务器。  
+### 2.ScheduledThreadPoolExecutor  
+可以创建以下2种类型的ScheduledThreadPoolExecutor： 
+·ScheduledThreadPoolExecutor。包含若干个线程的ScheduledThreadPoolExecutor，适用于多个后台线程执行**周期任务**，同时为了满足资源管理的需求需要限制后台线程数量的应用场景。  
+·SingleThreadScheduledExecutor。只包含一个线程的ScheduledThreadPoolExecutor，适用于需要单个后台线程执行**周期任务**，并且需要保证顺序地执行各个任务的应用场景。  
+此类的相关API见P372  
+### 3.Future接口  
+Future接口和实现该接口的FutureTask类用来表示异步计算的结果。当我们把Runnable接口或Callable接口的实现submit给ThreadPoolExecutor或ScheduledThreadPoolExecutor会向我们返回一个FutureTask对象。对于的API如下：  
+```java
+<T> Future<T> submit(Callable<T> task)
+<T> Future<T> submit(Runnable task, T result)
+Future<> submit(Runnable task)
+```  
+### 4.Runnable接口和Callable接口  
+这些接口实现类都可以被ThreadPoolExecutor和ScheduledThreadPoolExecutor执行。Runnable不会返回结果但Callable会。  
