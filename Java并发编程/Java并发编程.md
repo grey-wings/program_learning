@@ -428,9 +428,9 @@ DelayQueue可以用于：
 它可以看成一个传球手，适合传递性场景。SynchronousQueue的吞吐量高于LinkedBlockingQueue和ArrayBlockingQueue。  
 #### 3.3 LinkedTransferQueue：无界阻塞TransferQueue队列  
 相比其他队列，它多了tryTransfer和transfer方法。  
-##### 3.1 transfer方法  
+##### 3.3.1 transfer方法  
 如果当前有消费在等待接收元素（消费者使用take()方法或者带时间限制的poll()方法时），transfer方法可以把生产者传入的元素立刻transfer给消费者。如果没有消费者在等待，transfer方法会将元素存放在队列的tail结点，并等到该元素被消费了才返回。  
-##### 3.2 tryTransfer方法  
+##### 3.3.2 tryTransfer方法  
 试探生产者传入的元素能否直接传给消费者。如果没有消费者等待接收元素，则返回false。和transfer的区别是tryTransfer方法无论消费者是否接受，方法立即返回，而transfer方法必须等到消费后才返回。  
 有时间限制的tryTransfer(E e, long timeout, TimeUnit unit)方法，超时还没消费元素则返回false，否则返回true。  
 #### 3.4 LinkedBlockingDeque：双向阻塞队列  
@@ -650,3 +650,33 @@ Future<> submit(Runnable task)
 ```  
 ### 4.Runnable接口和Callable接口  
 这些接口实现类都可以被ThreadPoolExecutor和ScheduledThreadPoolExecutor执行。Runnable不会返回结果但Callable会。  
+可以使用Executor的callable()方法把Runnable包装成Callable。然后用submit()提交给Executor执行，并返回一个FutureTask对象。可以用FutureTask.get()方法等待任务执行完成。    
+### 5.ThreadPoolExecutor详解  
+Executor框架最核心的类是ThreadPoolExecutor，它是线程池的实现类，主要由下列4个组件构成。  
+[![QQ-20220910144611.jpg](https://i.postimg.cc/dVBjbyYq/QQ-20220910144611.jpg)](https://postimg.cc/688ZRTqS)  
+通过Executor框架的工具类Executors，可以创建3种类型的ThreadPoolExecutor：FixedThreadPool、SingleThreadExecutor和CachedThreadPool。  
+#### 5.1 FixedThreadPool  
+FixedThreadPool被称为可重用固定线程数的线程池。它的定义如下：    
+```java
+public static ExecutorService newFixedThreadPool(int nThreads) {
+    return new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS,
+                                  new LinkedBlockingQueue<Runnable>());
+}
+```  
+corePoolSize和maximumPoolSize都被设置为nThreads。当线程池中的线程数大于corePoolSize时，keepAliveTime为多余的空闲线程等待新任务的最长时间，超过这个时间后多余的线程将被终止。这里的keepAliveTime被设置为0，意味着多余的线程会被立即终止（然而这个参数卵用没有，原因如下）。  
+FixedThreadPool使用无界队列作为工作队列，它会产生一下影响：
+·线程池中的线程数达到corePoolSize后，新任务将在无界队列中等待，因此线程池中的线程数不会超过corePoolSize。  
+·maximumPoolSize和keepAliveTime无效。  
+·任务不会被拒绝。  
+#### 5.2 SingleThreadExecutor  
+使用单个线程，源码如下：  
+```java
+public static ExecutorService newSingleThreadExecutor() {
+    return new FinalizableDelegatedExecutorService
+            (new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<Runnable>()));
+}
+```   
+corePoolSize和maximumPoolSize都被设置为1，其余参数与FixedThreadPool相同。工作队列是无界队列，其作用见前一节。  
+#### 5.3 CachedThreadPool  
+它会根据需要创建新线程。  
