@@ -9,6 +9,8 @@
 #define print(i) cout<<(i)<<endl;
 #define ll long long
 #define ull unsigned long long
+#define lowerBound(V,x) lower_bound(all(V),x)-V.begin()
+#define upperBound(V,x) upper_bound(all(V),x)-V.begin()
 
 /* 定义 */
 typedef queue<int> QUEUEINT;
